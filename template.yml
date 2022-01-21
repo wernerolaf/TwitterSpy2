@@ -1,0 +1,149 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+Description: An AWS Lambda application that calls the Lambda API.
+Resources:
+  UserTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      PrimaryKey:
+        Name: subscriptionId
+        Type: String
+      TableName: subscription
+  TopicTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      PrimaryKey:
+        Name: topicName
+        Type: String
+      TableName: topic
+  TweetTable:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      PrimaryKey:
+        Name: tweetId
+        Type: String
+      TableName: tweets
+  api:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: api
+      TracingEnabled: true
+      OpenApiVersion: 3.0.2
+  createsubscribtion:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.8
+      CodeUri: CreateSubscription/
+      Description: Create subscription
+      Timeout: 10
+      # Function's execution role
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - AWSLambda_ReadOnlyAccess
+        - AWSXrayWriteOnlyAccess
+        - AmazonSNSFullAccess
+        - AmazonDynamoDBFullAccess
+      Tracing: Active
+      Events:
+        getEndpoint:
+          Type: Api
+          Properties:
+            RestApiId: !Ref api
+            Path: /subscription
+            Method: POST
+  notifydiscord:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.8
+      CodeUri: NotifyDiscord/
+      Description: Send discord notifications
+      Timeout: 10
+      # Function's execution role
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - AWSLambda_ReadOnlyAccess
+        - AWSXrayWriteOnlyAccess
+        - AmazonDynamoDBReadOnlyAccess
+      Tracing: Active
+      Events:
+        SnsEvent:
+          Type: SNS
+          Properties:
+            Topic: !Ref DestinationSNS
+  notifysns:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.8
+      CodeUri: NotifySNS/
+      Description: Publish to SNS
+      Timeout: 10
+      # Function's execution role
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - AWSLambda_ReadOnlyAccess
+        - AWSXrayWriteOnlyAccess
+        - AmazonSNSFullAccess
+        - AmazonDynamoDBReadOnlyAccess
+      Tracing: Active
+      Events:
+        SnsEvent:
+          Type: SNS
+          Properties:
+            Topic: !Ref DestinationSNS
+  savetweets:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.8
+      CodeUri: SaveTweets/
+      Description: Save tweets to db
+      Timeout: 10
+      # Function's execution role
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - AWSXrayWriteOnlyAccess
+        - AmazonDynamoDBFullAccess
+        - AWSLambda_FullAccess
+      Tracing: Active
+      Events:
+        SnsEvent:
+          Type: SNS
+          Properties:
+            Topic: !Ref DestinationSNS
+  DestinationSNS:
+    Type: AWS::SNS::Topic
+  cryptotwitter:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.8
+      CodeUri: crypto_twitter/twittercrypto/
+      Description: Search for twitter posts about crypto
+      Timeout: 10
+      # Function's execution role
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - AWSLambda_ReadOnlyAccess
+        - AWSXrayWriteOnlyAccess
+        - AmazonDynamoDBFullAccess
+      Tracing: Active
+      Layers:
+        - arn:aws:lambda:us-east-1:770693421928:layer:Klayers-python38-spacy_model_en_small:1
+        - arn:aws:lambda:us-east-1:770693421928:layer:Klayers-python38-spacy:41
+      EventInvokeConfig:
+        DestinationConfig:
+          OnSuccess:
+            Type: SNS
+            Destination: !Ref DestinationSNS
+
+      #Events:
+      #  ScheduleEvent:
+      #    Type: Schedule
+      #    Properties:
+      #      Schedule: 'rate(1 minute)'
+      #      Name: TwitterLambdaSchedule
+      #      Description: Pull twitter api every minute
+      #      Enabled: false
